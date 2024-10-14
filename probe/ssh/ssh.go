@@ -23,6 +23,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os/exec"
 
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
@@ -104,7 +105,7 @@ func (s *Server) Configure(gConf global.ProbeSettings,
 
 	s.DefaultProbe.Config(gConf, kind, tag, name, endpoint, fn)
 
-	if len(s.Password) <= 0 && len(s.PrivateKey) <= 0 {
+	if len(s.Password) <= 0 && len(s.PrivateKey) <= 0 && !s.IsLocalHost() {
 		return fmt.Errorf("password or private key is required")
 	}
 
@@ -134,7 +135,7 @@ func (s *Server) DoProbe() (bool, string) {
 
 	const UnknownExitCode int = 255
 
-	output, err := s.RunSSHCmd()
+	output, err := s.RunSSHCmd() // Run ssh command, RunLocalCmd is dedicated to Host probe.
 
 	s.outputLen = len(output)
 
@@ -196,12 +197,12 @@ func (s *Server) GetSSHClient() error {
 func (s *Server) GetSSHClientFromBastion() error {
 	bConfig, err := s.bastion.SSHConfig(s.ProbeKind, s.ProbeName, s.Timeout())
 	if err != nil {
-		return fmt.Errorf("Bastion: %s", err)
+		return fmt.Errorf("bastion: %s", err)
 	}
 
 	bClient, err := ssh.Dial("tcp", s.bastion.Host, bConfig)
 	if err != nil {
-		return fmt.Errorf("Bastion: %s", err)
+		return fmt.Errorf("bastion: %s", err)
 	}
 	s.bastion.client = bClient
 
@@ -291,4 +292,35 @@ func (s *Server) ExportMetrics() {
 		"exit":     fmt.Sprintf("%d", s.exitCode),
 		"endpoint": s.ProbeResult.Endpoint,
 	}, s.Labels)).Set(float64(s.outputLen))
+}
+
+// RunLocalCmd run the command on localhost
+func (s *Server) RunLocalCmd() (string, error) {
+	env := ""
+	for _, e := range s.Env {
+		env += "export " + e + ";"
+	}
+
+	// Creating the buffer which will hold the executed command's output.
+	var stdoutBuf, stderrBuf bytes.Buffer
+	// Lunch a goroutine to run the command
+	ctx, cancel := context.WithTimeout(context.Background(), s.Timeout())
+	// Run command with timeout
+	c := exec.CommandContext(ctx, "bash", "-c", env+global.CommandLine(s.Command, s.Args))
+	c.Stderr = &stderrBuf
+	c.Stdout = &stdoutBuf
+	err := c.Run()
+	defer cancel()
+	if err != nil {
+		return stderrBuf.String(), err
+	}
+
+	return stdoutBuf.String(), nil
+}
+
+func (s *Server) RunCmd() (string, error) {
+	if s.IsLocalHost() {
+		return s.RunLocalCmd()
+	}
+	return s.RunSSHCmd()
 }

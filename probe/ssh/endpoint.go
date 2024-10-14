@@ -104,3 +104,10 @@ func (e *Endpoint) SSHConfig(kind, name string, timeout time.Duration) (*ssh.Cli
 
 	return config, nil
 }
+func (e *Endpoint) IsLocalHost() bool {
+	if e.Host == "" || e.Host == "127.0.0.1" || e.Host == "localhost" ||
+		e.Host == "127.0.0.1:22" || e.Host == "localhost:22" {
+		return true
+	}
+	return false
+}

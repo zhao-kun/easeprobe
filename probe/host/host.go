@@ -80,9 +80,7 @@ func (s *Server) Config(gConf global.ProbeSettings) error {
 
 // DoProbe return the checking result
 func (s *Server) DoProbe() (bool, string) {
-
-	output, err := s.RunSSHCmd()
-
+	output, err := s.RunCmd()
 	if err != nil {
 		log.Errorf("[%s / %s] %v", s.ProbeKind, s.ProbeName, err)
 		return false, err.Error() + " - " + output
@@ -121,7 +119,7 @@ func (s *Server) CheckThreshold(info Info) (bool, string) {
 
 	for _, metric := range s.hostMetrics {
 		s, m := metric.CheckThreshold()
-		if s == false {
+		if !s {
 			status = false
 			message = addMessage(message, m)
 		}
